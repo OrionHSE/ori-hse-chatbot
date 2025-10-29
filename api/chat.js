@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${OPENAI_API_KEY}`,
-    'OpenAI-Beta': 'assistants=v1'
+    'OpenAI-Beta': 'assistants=v2'
   };
 
   try {
@@ -77,3 +77,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
