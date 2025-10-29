@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ORI-HSE Assistant</title>
 
   <style>
@@ -18,13 +18,27 @@
     }
 
     /* App container: full viewport height */
-    .page {
-      height: calc(var(--vh, 1vh) * 100);
-      height: 100dvh; /* modern browsers */
-      display: flex;
-      flex-direction: column;
-      background: #f7f7f8;
-    }
+  :root { --vh: 1vh; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.page {
+  height: calc(var(--vh, 1vh) * 100);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #f7f7f8;
+}
+
+body.embedded .page {
+  height: 100%;
+}
+
 
     /* Header */
     .chat-header {
@@ -132,12 +146,23 @@
     }
   </style>
 
-  <script>
-    // Mobile 100vh fix: keep visible area full height when keyboard opens
-    function setVh(){ document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); }
-    window.addEventListener('load', setVh);
-    window.addEventListener('resize', setVh);
-  </script>
+ <script>
+  // Mobile + Embedded height handling
+  function setVh() {
+    document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+  }
+  window.addEventListener('load', setVh);
+  window.addEventListener('resize', setVh);
+
+  // Detect if inside Google Sites iframe and adjust layout
+  function detectEmbedded() {
+    if (window.self !== window.top) {
+      document.body.classList.add('embedded');
+    }
+  }
+  window.addEventListener('load', detectEmbedded);
+</script>
+
 </head>
 
 <body>
@@ -301,4 +326,5 @@
   </script>
 </body>
 </html>
+
 
