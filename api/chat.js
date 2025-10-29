@@ -27,54 +27,53 @@ module.exports = async (req, res) => {
   };
 
   try {
-    let response;
+    let apiResponse;
     
-    switch(action) {
-      case 'createThread':
-        response = await fetch('https://api.openai.com/v1/threads', {
-          method: 'POST',
-          headers
-        });
-        break;
-        
-      case 'sendMessage':
-        response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ role: 'user', content: message })
-        });
-        break;
-        
-      case 'runAssistant':
-        response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ assistant_id: ASSISTANT_ID })
-        });
-        break;
-        
-      case 'checkStatus':
-        response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-          headers
-        });
-        break;
-        
-      case 'getMessages':
-        response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-          headers
-        });
-        break;
-        
-      default:
-        return res.status(400).json({ error: 'Invalid action' });
+    if (action === 'createThread') {
+      apiResponse = await fetch('https://api.openai.com/v1/threads', {
+        method: 'POST',
+        headers
+      });
+    } else if (action === 'sendMessage') {
+      apiResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ role: 'user', content: message })
+      });
+    } else if (action === 'runAssistant') {
+      apiResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ assistant_id: ASSISTANT_ID })
+      });
+    } else if (action === 'checkStatus') {
+      apiResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
+        method: 'GET',
+        headers
+      });
+    } else if (action === 'getMessages') {
+      apiResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+        method: 'GET',
+        headers
+      });
+    } else {
+      return res.status(400).json({ error: 'Invalid action' });
     }
 
-    const data = await response.json();
-    return res.status(response.status).json(data);
+    const data = await apiResponse.json();
+    
+    // Log for debugging
+    console.log(`Action: ${action}, Status: ${apiResponse.status}`);
+    
+    if (!apiResponse.ok) {
+      console.error('API Error:', data);
+      return res.status(apiResponse.status).json(data);
+    }
+
+    return res.status(200).json(data);
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Server Error:', error);
     return res.status(500).json({ error: error.message });
   }
 };
-
