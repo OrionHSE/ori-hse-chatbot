@@ -1,21 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ORI-HSE Assistant</title>
 
   <style>
-    :root { --vh: 1vh; } /* JS will update this dynamically */
+    :root { --vh: 1vh; } /* JS updates this for mobile keyboards */
 
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
-      overflow: hidden; /* prevent double scrolling on mobile */
+      overflow: hidden; /* prevent double scrollbars in iframe */
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: #f7f7f8;
     }
 
-    /* Fill the visible viewport like a native app */
+    /* App container: full viewport height */
     .page {
       height: calc(var(--vh, 1vh) * 100);
       height: 100dvh; /* modern browsers */
@@ -24,7 +26,19 @@
       background: #f7f7f8;
     }
 
-    /* Chat container */
+    /* Header */
+    .chat-header {
+      background: linear-gradient(135deg, #004c9d 0%, #00a59b 100%);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    /* Chat area */
     .chat {
       flex: 1;
       display: flex;
@@ -32,18 +46,7 @@
       max-width: 860px;
       margin: 0 auto;
       width: 100%;
-      min-height: 0;
-    }
-
-    .chat-header {
-      background: linear-gradient(135deg, #004c9d 0%, #00a59b 100%);
-      color: white;
-      padding: 14px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 18px;
-      font-weight: 600;
+      min-height: 0; /* critical for nested flex scrolling */
     }
 
     .chat-messages {
@@ -52,18 +55,11 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       padding: 20px;
+      background: #f7f7f8;
     }
 
-    .message {
-      margin-bottom: 16px;
-      display: flex;
-      animation: slideIn 0.3s ease-out;
-    }
-
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    .message { margin-bottom: 16px; display: flex; animation: slideIn .3s ease-out; }
+    @keyframes slideIn { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
 
     .message-content {
       max-width: 75%;
@@ -72,36 +68,32 @@
       word-wrap: break-word;
       font-size: 14px;
       line-height: 1.4;
-      background: white;
+      background: #fff;
       color: #333;
       border-bottom-left-radius: 4px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
     }
 
-    .message.user {
-      justify-content: flex-end;
-    }
-
+    .message.user { justify-content: flex-end; }
     .message.user .message-content {
       background: linear-gradient(135deg, #004c9d 0%, #00a59b 100%);
-      color: white;
+      color: #fff;
       border-bottom-right-radius: 4px;
       box-shadow: none;
     }
 
+    /* Input bar */
     .chat-input-container {
       border-top: 1px solid #e6e6e6;
       background: #f7f7f8;
       padding: 12px 20px 20px;
     }
-
     .chat-input-wrapper {
       display: flex;
       gap: 8px;
       max-width: 860px;
       margin: 0 auto;
     }
-
     .chat-input {
       flex: 1;
       padding: 10px 14px;
@@ -109,70 +101,30 @@
       border-radius: 20px;
       font-size: 14px;
       outline: none;
-      transition: border-color 0.3s;
+      transition: border-color .3s;
     }
-
-    .chat-input:focus {
-      border-color: #004c9d;
-    }
-
+    .chat-input:focus { border-color: #004c9d; }
     .send-button {
       padding: 10px 20px;
       border: none;
       border-radius: 20px;
       font-size: 14px;
       font-weight: 600;
-      color: white;
+      color: #fff;
       background: linear-gradient(135deg, #004c9d 0%, #00a59b 100%);
       cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
     }
+    .send-button:disabled { opacity: .6; cursor: not-allowed; }
 
-    .send-button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 76, 157, 0.4);
-    }
-
-    .send-button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .loading {
-      display: flex;
-      gap: 4px;
-      padding: 10px 14px;
-      background: white;
-      border-radius: 16px;
-    }
-
-    .loading-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #004c9d;
-      animation: bounce 1.4s infinite ease-in-out;
-    }
-
-    .loading-dot:nth-child(1) { animation-delay: -0.32s; }
-    .loading-dot:nth-child(2) { animation-delay: -0.16s; }
-
-    @keyframes bounce {
-      0%, 80%, 100% { transform: scale(0); }
-      40% { transform: scale(1); }
-    }
+    /* Loading dots */
+    .loading { display:flex; gap:4px; padding:10px 14px; background:#fff; border-radius:16px; }
+    .loading-dot { width:8px; height:8px; border-radius:50%; background:#004c9d; animation:bounce 1.4s infinite ease-in-out; }
+    .loading-dot:nth-child(1){ animation-delay:-.32s; } .loading-dot:nth-child(2){ animation-delay:-.16s; }
+    @keyframes bounce { 0%,80%,100%{transform:scale(0);} 40%{transform:scale(1);} }
 
     .error-message {
-      background: #fee;
-      color: #c33;
-      padding: 10px;
-      border-radius: 8px;
-      margin: 10px 20px;
-      text-align: center;
-      font-size: 13px;
-      max-width: 860px;
-      width: calc(100% - 40px);
-      align-self: center;
+      background:#fee; color:#c33; padding:10px; border-radius:8px; margin:10px 20px; text-align:center; font-size:13px;
+      max-width:860px; width:calc(100% - 40px); align-self:center;
     }
 
     @media (max-width: 480px) {
@@ -182,11 +134,171 @@
   </style>
 
   <script>
-    // Fix mobile 100vh behavior
-    function setVh() {
-      document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
-    }
+    // Mobile 100vh fix: keep visible area full height when keyboard opens
+    function setVh(){ document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); }
     window.addEventListener('load', setVh);
     window.addEventListener('resize', setVh);
   </script>
 </head>
+
+<body>
+  <div class="page">
+    <div class="chat-header">
+      <div>ORI-HSE Assistant</div>
+    </div>
+
+    <div class="chat">
+      <div class="chat-messages" id="chatMessages">
+        <!-- Initial visible message so you know rendering works -->
+        <div class="message assistant">
+          <div class="message-content">
+            👋 Hello! I'm ORI — your Orion HSE Assistant. I can help answer questions based on our policies. What would you like to know?<br><br>
+            💬 (<em>También sé español — ¡Pregúntame algo!</em>)
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-input-container">
+        <div class="chat-input-wrapper">
+          <input
+            type="text"
+            class="chat-input"
+            id="chatInput"
+            placeholder="Type your question for ORI... / Pregúntame algo..."
+            onkeypress="if(event.key==='Enter') sendMessage()"
+          />
+          <button class="send-button" id="sendButton" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ====== CONFIG ======
+    const API_ENDPOINT = 'https://ori-hse-chatbot.vercel.app/api/chat'; // confirm this URL is correct
+    let currentThreadId = null;
+
+    // Keep view pinned to bottom when viewport shifts
+    const chatMessages = document.getElementById('chatMessages');
+    function scrollToBottom(){ chatMessages.scrollTop = chatMessages.scrollHeight; }
+    window.addEventListener('resize', scrollToBottom);
+    // ====================
+
+    // Start thread after DOM is ready (UI is already visible)
+    window.addEventListener('DOMContentLoaded', () => { createThread(); scrollToBottom(); });
+
+    async function createThread(){
+      try{
+        const res = await fetch(API_ENDPOINT, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'createThread' })
+        });
+        const data = await res.json();
+        if (data.id) { currentThreadId = data.id; }
+        else { throw new Error('Failed to create thread'); }
+      } catch (e){
+        console.error(e); showError('Failed to initialize chat. Please refresh and try again.');
+      }
+    }
+
+    async function sendMessage(){
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg) return;
+
+      if (!currentThreadId) {
+        await createThread();
+        if (!currentThreadId) { showError('Could not start conversation. Please try again.'); return; }
+      }
+
+      addMessage(msg, 'user');
+      input.value = '';
+
+      const loadingId = showLoading();
+      toggleInput(false);
+
+      try {
+        await fetch(API_ENDPOINT, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'sendMessage', threadId: currentThreadId, message: msg })
+        });
+
+        const runRes = await fetch(API_ENDPOINT, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'runAssistant', threadId: currentThreadId })
+        });
+        const runData = await runRes.json();
+        const runId = runData.id;
+
+        let status = 'queued', tries = 0, max = 60;
+        while ((status === 'queued' || status === 'in_progress') && tries < max) {
+          await new Promise(r => setTimeout(r, 1000));
+          tries++;
+          const s = await fetch(API_ENDPOINT, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'checkStatus', threadId: currentThreadId, runId })
+          });
+          const sd = await s.json();
+          status = sd.status;
+        }
+
+        if (status === 'completed') {
+          const mRes = await fetch(API_ENDPOINT, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'getMessages', threadId: currentThreadId })
+          });
+          const mData = await mRes.json();
+          const last = mData.data[0];
+          const text = last?.content?.[0]?.text?.value ?? '(No response text)';
+          removeLoading(loadingId);
+          addMessage(text, 'assistant');
+        } else {
+          throw new Error('Run ended with status: ' + status);
+        }
+      } catch (err){
+        console.error(err);
+        removeLoading(loadingId);
+        showError('Failed to get response. Please try again.');
+      } finally {
+        toggleInput(true);
+        scrollToBottom();
+      }
+    }
+
+    function addMessage(content, role){
+      const div = document.createElement('div');
+      div.className = `message ${role}`;
+      div.innerHTML = `<div class="message-content">${escapeHtml(content)}</div>`;
+      chatMessages.appendChild(div);
+      scrollToBottom();
+    }
+
+    function showLoading(){
+      const id = 'loading-' + Date.now();
+      const div = document.createElement('div');
+      div.id = id;
+      div.className = 'message assistant';
+      div.innerHTML = `<div class="message-content loading">
+        <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
+      </div>`;
+      chatMessages.appendChild(div);
+      scrollToBottom();
+      return id;
+    }
+
+    function removeLoading(id){ const el = document.getElementById(id); if (el) el.remove(); }
+    function showError(msg){
+      const e = document.createElement('div');
+      e.className = 'error-message';
+      e.textContent = msg;
+      chatMessages.appendChild(e);
+      setTimeout(()=> e.remove(), 6000);
+    }
+    function toggleInput(on){
+      document.getElementById('chatInput').disabled = !on;
+      document.getElementById('sendButton').disabled = !on;
+    }
+    function escapeHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
+  </script>
+</body>
+</html>
