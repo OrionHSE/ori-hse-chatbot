@@ -1,43 +1,17 @@
 // /api/chat.js
-// Streams tokens so replies "type out" like ChatGPT.
-// Vercel → Project Settings → Environment Variables → OPENAI_API_KEY
+// Calls your OpenAI Assistant (with uploaded Orion HSE Policy files).
+// Front-end will do typewriter effect even though this returns a single chunk.
+// Vercel → Settings → Environment Variables:
+//   OPENAI_API_KEY = <your key>
+//   ASSISTANT_ID   = asst_xxxxxxxx
 
 export const config = { runtime: "edge" };
 
-const SYSTEM_PROMPT = `
-You are ORI — the Orion HSE Assistant for Orion Group Holdings.
+const OPENAI_API = "https://api.openai.com/v1";
 
-SCOPE & SOURCING
-- Primary source: the **Orion HSE Policy**. Always answer from it first.
-- When you cite, include the **section title and number** in brackets like:
-  📘 [Orion HSE Policy — PPE Requirements, §4.2]
-- Only if the Orion HSE Policy does NOT address the question, you may reference OSHA,
-  and you must clearly label it:
-  🏛️ [OSHA — 29 CFR 1926.501(b)(1)]
-- Never invent section numbers or policy language. If unsure, say so and give the best
-  next step (e.g., “confirm with HSE” or point to the policy index/owner).
-
-STYLE
-- Use concise Markdown with short bullets and bold labels.
-- Default to bullets; limit to what’s actionable.
-- If the user writes in Spanish, reply fully in Spanish.
-
-BEHAVIOR
-- If the policy is silent or ambiguous: say that plainly, then offer OSHA reference
-  (clearly labeled) or escalation.
-- When both the Orion policy and OSHA apply, list **Orion first**, then OSHA as
-  supporting authority.
-
-EXAMPLES
-- “Hard hats are required on active construction sites.  
-  📘 [Orion HSE Policy — PPE Requirements, §4.2]”
-
-- “El uso de líneas de vida es obligatorio cuando existe riesgo de caída.  
-  📘 [Política HSE de Orion — Protección contra Caídas, §5.1]  
-  🏛️ [OSHA — 29 CFR 1926.501(b)(1)] (si la política no lo cubre explícitamente)”
-`;
-
-
+async function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export default async function handler(req) {
   if (req.method !== "POST") {
@@ -45,9 +19,10 @@ export default async function handler(req) {
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return new Response("Missing OPENAI_API_KEY", { status: 500 });
-  }
+  const assistantId = process.env.ASSISTANT_ID;
+
+  if (!apiKey) return new Response("Missing OPENAI_API_KEY", { status: 500 });
+  if (!assistantId) return new Response("Missing ASSISTANT_ID", { status: 500 });
 
   let body;
   try {
@@ -57,73 +32,147 @@ export default async function handler(req) {
   }
   const userMessage = (body.message || "").toString();
 
-  // Call OpenAI with streaming enabled
-  const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+  // 1) Create a new thread
+  const threadRes = await fetch(`${OPENAI_API}/threads`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!threadRes.ok) {
+    const t = await threadRes.text().catch(() => "");
+    return new Response(`Failed to create thread: ${t}`, { status: 502 });
+  }
+
+  const thread = await threadRes.json();
+  const threadId = thread.id;
+
+  // 2) Add the user message to the thread
+  const msgRes = await fetch(`${OPENAI_API}/threads/${threadId}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",       // low-latency, streams well
-      temperature: 0.3,
-      stream: true,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage }
-      ],
+      role: "user",
+      content: userMessage,
     }),
   });
 
-  if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text().catch(() => "");
-    return new Response(`Upstream error: ${text}`, { status: 502 });
+  if (!msgRes.ok) {
+    const t = await msgRes.text().catch(() => "");
+    return new Response(`Failed to add message: ${t}`, { status: 502 });
   }
 
-  // Convert OpenAI SSE into a plain text stream of tokens
-  const stream = new ReadableStream({
-    async start(controller) {
-      const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
-      const encoder = new TextEncoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE frames are separated by blank lines
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() || "";
-
-        for (const frame of frames) {
-          if (!frame.startsWith("data:")) continue;
-          const data = frame.slice(5).trim();
-          if (data === "[DONE]") {
-            controller.enqueue(encoder.encode("[END]"));
-            controller.close();
-            return;
-          }
-          try {
-            const json = JSON.parse(data);
-            const delta = json?.choices?.[0]?.delta?.content || "";
-            if (delta) controller.enqueue(encoder.encode(delta));
-          } catch {
-            // ignore keepalive / parse blips
-          }
-        }
-      }
-      controller.close();
+  // 3) Create a run using your Assistant (policy files live there)
+  //    We reinforce the policy-first behavior via "instructions" too.
+  const runRes = await fetch(`${OPENAI_API}/threads/${threadId}/runs`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      assistant_id: assistantId,
+      instructions: `
+You are ORI — the Orion HSE Assistant.
+
+SCOPE & SOURCING
+- Primary source: the Orion HSE Policy files attached to this Assistant.
+- Cite the policy with section title and number:
+  📘 [Orion HSE Policy — <Section Title>, §<Number>]
+- Only reference OSHA if Orion policy does NOT address it, clearly labeled:
+  🏛️ [OSHA — 29 CFR <part.section>]
+- If unsure, say so; do not invent sections.
+
+STYLE
+- Use concise Markdown with short bullets and **bold** labels.
+- Reply in the user's language (English or Spanish).
+      `.trim(),
+    }),
   });
 
-  return new Response(stream, {
+  if (!runRes.ok) {
+    const t = await runRes.text().catch(() => "");
+    return new Response(`Failed to start run: ${t}`, { status: 502 });
+  }
+
+  const run = await runRes.json();
+  const runId = run.id;
+
+  // 4) Poll until the run completes
+  let status = run.status;
+  let tries = 0;
+  const MAX_TRIES = 90; // ~90 * 700ms ≈ 63s
+
+  while (status === "queued" || status === "in_progress" || status === "cancelling") {
+    await sleep(700);
+    tries++;
+    if (tries > MAX_TRIES) {
+      return new Response("Timed out waiting for assistant.", { status: 504 });
+    }
+
+    const check = await fetch(`${OPENAI_API}/threads/${threadId}/runs/${runId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    if (!check.ok) {
+      const t = await check.text().catch(() => "");
+      return new Response(`Failed to check run: ${t}`, { status: 502 });
+    }
+
+    const data = await check.json();
+    status = data.status;
+
+    if (status === "requires_action") {
+      // If you add tools later, handle required tool calls here.
+      // For now, just fail gracefully.
+      return new Response("Assistant requires action not implemented in this API.", { status: 501 });
+    }
+  }
+
+  if (status !== "completed") {
+    return new Response(`Run ended with status: ${status}`, { status: 500 });
+  }
+
+  // 5) Get the latest assistant message
+  const listRes = await fetch(
+    `${OPENAI_API}/threads/${threadId}/messages?limit=1&order=desc`,
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }
+  );
+
+  if (!listRes.ok) {
+    const t = await listRes.text().catch(() => "");
+    return new Response(`Failed to read messages: ${t}`, { status: 502 });
+  }
+
+  const list = await listRes.json();
+  const last = list?.data?.[0];
+  let textOut = "";
+
+  if (last?.content?.length) {
+    // Concatenate text parts (ignore images/attachments)
+    for (const part of last.content) {
+      if (part.type === "text" && part.text?.value) {
+        textOut += part.text.value + "\n";
+      }
+    }
+  }
+
+  textOut = textOut.trim();
+  if (!textOut) textOut = "Sorry — I couldn't read a response.";
+
+  // Return as plain text (front-end will animate/type it out)
+  return new Response(textOut, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache",
     },
   });
 }
-
-
