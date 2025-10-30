@@ -1,9 +1,4 @@
-// /api/chat.js
-// Calls your OpenAI Assistant (with uploaded Orion HSE Policy files).
-// Front-end will do typewriter effect even though this returns a single chunk.
-// Vercel → Settings → Environment Variables:
-//   OPENAI_API_KEY = <your key>
-//   ASSISTANT_ID   = asst_xxxxxxxx
+
 
 export const config = { runtime: "edge" };
 
@@ -176,3 +171,4 @@ STYLE
     },
   });
 }
+
