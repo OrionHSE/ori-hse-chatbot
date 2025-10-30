@@ -165,6 +165,9 @@ body.embedded .page {
 
 </head>
 
+
+
+  
 <body>
   <div class="page">
     <div class="chat-header">
@@ -197,134 +200,114 @@ body.embedded .page {
     </div>
   </div>
 
-  <script>
-    // ====== CONFIG ======
-    const API_ENDPOINT = 'https://ori-hse-chatbot.vercel.app/api/chat'; // confirm this URL is correct
-    let currentThreadId = null;
+<script>
+  // --- Streaming UI for ORI ---
 
-    // Keep view pinned to bottom when viewport shifts
-    const chatMessages = document.getElementById('chatMessages');
-    function scrollToBottom(){ chatMessages.scrollTop = chatMessages.scrollHeight; }
-    window.addEventListener('resize', scrollToBottom);
-    // ====================
+  // Scroll to the latest content
+  const chatMessages = document.getElementById('chatMessages');
+  function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
 
-    // Start thread after DOM is ready (UI is already visible)
-    window.addEventListener('DOMContentLoaded', () => { createThread(); scrollToBottom(); });
+  // Add a message bubble (user or assistant)
+  function addMessage(content, role) {
+    const wrap = document.createElement('div');
+    wrap.className = `message ${role}`;
+    const bubble = document.createElement('div');
+    bubble.className = 'message-content';
+    // For user, keep as text; for assistant we’ll inject HTML later
+    bubble.innerHTML = role === 'user' ? escapeHtml(content) : content;
+    wrap.appendChild(bubble);
+    chatMessages.appendChild(wrap);
+    scrollToBottom();
+    return bubble; // return the bubble so we can stream into it
+  }
 
-    async function createThread(){
-      try{
-        const res = await fetch(API_ENDPOINT, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'createThread' })
-        });
-        const data = await res.json();
-        if (data.id) { currentThreadId = data.id; }
-        else { throw new Error('Failed to create thread'); }
-      } catch (e){
-        console.error(e); showError('Failed to initialize chat. Please refresh and try again.');
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Send on Enter
+  document.getElementById('chatInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+  });
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const text = (input.value || '').trim();
+    if (!text) return;
+
+    // Show user bubble
+    addMessage(text, 'user');
+    input.value = '';
+
+    // Create assistant bubble with loading dots
+    const loadingHTML = `
+      <div class="loading">
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+      </div>`;
+    const assistantBubble = addMessage(loadingHTML, 'assistant');
+
+    try {
+      // Call your new streaming API
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+
+      if (!resp.ok || !resp.body) {
+        assistantBubble.textContent = 'Error: could not stream reply.';
+        return;
       }
-    }
 
-    async function sendMessage(){
-      const input = document.getElementById('chatInput');
-      const msg = input.value.trim();
-      if (!msg) return;
+      // Stream chunks as they arrive
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
 
-      if (!currentThreadId) {
-        await createThread();
-        if (!currentThreadId) { showError('Could not start conversation. Please try again.'); return; }
-      }
+      // Replace loading dots with empty content so we can start typing
+      assistantBubble.innerHTML = '';
 
-      addMessage(msg, 'user');
-      input.value = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk === '[END]') break;
 
-      const loadingId = showLoading();
-      toggleInput(false);
+        fullText += chunk;
 
-      try {
-        await fetch(API_ENDPOINT, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'sendMessage', threadId: currentThreadId, message: msg })
-        });
-
-        const runRes = await fetch(API_ENDPOINT, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'runAssistant', threadId: currentThreadId })
-        });
-        const runData = await runRes.json();
-        const runId = runData.id;
-
-        let status = 'queued', tries = 0, max = 60;
-        while ((status === 'queued' || status === 'in_progress') && tries < max) {
-          await new Promise(r => setTimeout(r, 1000));
-          tries++;
-          const s = await fetch(API_ENDPOINT, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ action:'checkStatus', threadId: currentThreadId, runId })
-          });
-          const sd = await s.json();
-          status = sd.status;
-        }
-
-        if (status === 'completed') {
-          const mRes = await fetch(API_ENDPOINT, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ action:'getMessages', threadId: currentThreadId })
-          });
-          const mData = await mRes.json();
-          const last = mData.data[0];
-          const text = last?.content?.[0]?.text?.value ?? '(No response text)';
-          removeLoading(loadingId);
-          addMessage(text, 'assistant');
-        } else {
-          throw new Error('Run ended with status: ' + status);
-        }
-      } catch (err){
-        console.error(err);
-        removeLoading(loadingId);
-        showError('Failed to get response. Please try again.');
-      } finally {
-        toggleInput(true);
+        // Render progressively as Markdown (bullets, bold, etc.)
+        assistantBubble.innerHTML = marked.parse(fullText);
         scrollToBottom();
       }
-    }
 
-    function addMessage(content, role){
-      const div = document.createElement('div');
-      div.className = `message ${role}`;
-      div.innerHTML = `<div class="message-content">${escapeHtml(content)}</div>`;
-      chatMessages.appendChild(div);
+      assistantBubble.innerHTML = marked.parse(fullText.trim());
       scrollToBottom();
-    }
 
-    function showLoading(){
-      const id = 'loading-' + Date.now();
-      const div = document.createElement('div');
-      div.id = id;
-      div.className = 'message assistant';
-      div.innerHTML = `<div class="message-content loading">
-        <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
-      </div>`;
-      chatMessages.appendChild(div);
-      scrollToBottom();
-      return id;
+    } catch (err) {
+      console.error(err);
+      assistantBubble.textContent = 'Network error.';
     }
+  }
 
-    function removeLoading(id){ const el = document.getElementById(id); if (el) el.remove(); }
-    function showError(msg){
-      const e = document.createElement('div');
-      e.className = 'error-message';
-      e.textContent = msg;
-      chatMessages.appendChild(e);
-      setTimeout(()=> e.remove(), 6000);
-    }
-    function toggleInput(on){
-      document.getElementById('chatInput').disabled = !on;
-      document.getElementById('sendButton').disabled = !on;
-    }
-    function escapeHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
-  </script>
+.message.assistant .message-content ul { margin: 8px 0 8px 18px; }
+.message.assistant .message-content li { margin: 4px 0; }
+.message.assistant .message-content p { margin: 6px 0; }
+
+
+  
+</script>
+
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+
+  
 </body>
 </html>
+
 
 
