@@ -100,6 +100,8 @@
       font-size: 14px;
       outline: none;
       transition: border-color .3s;
+      resize: none;
+      line-height: 1.4;
     }
 
     .chat-input:focus { border-color: #004c9d; }
@@ -130,13 +132,6 @@
     .loading-dot:nth-child(2){ animation-delay:-.16s; }
     @keyframes bounce { 0%,80%,100%{transform:scale(0);} 40%{transform:scale(1);} }
 
-    .error-message {
-      background:#fee; color:#c33; padding:10px;
-      border-radius:8px; margin:10px 20px;
-      text-align:center; font-size:13px;
-      max-width:860px; width:calc(100% - 40px); align-self:center;
-    }
-
     .message.assistant .message-content ul { margin: 8px 0 8px 18px; }
     .message.assistant .message-content li { margin: 4px 0; }
     .message.assistant .message-content p { margin: 6px 0; }
@@ -148,14 +143,14 @@
   </style>
 
   <script>
-    // Mobile viewport height fix
+    // Mobile viewport fix
     function setVh() {
       document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
     }
     window.addEventListener('load', setVh);
     window.addEventListener('resize', setVh);
 
-    // Detect if embedded (like in Google Sites)
+    // Detect if embedded (Google Sites)
     function detectEmbedded() {
       if (window.self !== window.top) {
         document.body.classList.add('embedded');
@@ -175,8 +170,8 @@
       <div class="chat-messages" id="chatMessages">
         <div class="message assistant">
           <div class="message-content">
-            👋 Hello! I'm ORI — your Orion HSE Assistant.  
-            I can help answer questions based on our policies.  
+            👋 Hello! I'm ORI — your Orion HSE Assistant.<br>
+            I can help answer questions based on our policies.<br>
             💬 <em>(También sé español — ¡Pregúntame algo!)</em>
           </div>
         </div>
@@ -187,10 +182,10 @@
           <textarea
             class="chat-input"
             id="chatInput"
-            placeholder="Ask ORI… / Pregúntame algo..."
+            placeholder="Ask ORI... / Pregúntame algo..."
             rows="1"
           ></textarea>
-          <button class="send-button" id="sendButton" onclick="sendMessage()">Send</button>
+          <button class="send-button" id="sendButton">Send</button>
         </div>
       </div>
     </div>
@@ -198,119 +193,122 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-<script>
-  const chatMessages = document.getElementById('chatMessages');
-  function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+  <script>
+    const chatMessages = document.getElementById('chatMessages');
+    const inputEl = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendButton');
 
-  function addMessage(content, role) {
-    const wrap = document.createElement('div');
-    wrap.className = `message ${role}`;
-    const bubble = document.createElement('div');
-    bubble.className = 'message-content';
-    bubble.innerHTML = role === 'user' ? escapeHtml(content) : content;
-    wrap.appendChild(bubble);
-    chatMessages.appendChild(wrap);
-    scrollToBottom();
-    return bubble;
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  // Typewriter fallback: progressively render Markdown
-  function typeOutMarkdown(targetEl, fullText, speed = 12, step = 3) {
-    let i = 0;
-    const timer = setInterval(() => {
-      i += step;
-      targetEl.innerHTML = marked.parse(fullText.slice(0, i));
-      scrollToBottom();
-      if (i >= fullText.length) clearInterval(timer);
-    }, speed);
-  }
-
-  // Shift+Enter = newline, Enter = send
-  const inputEl = document.getElementById('chatInput');
-  inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+    // Auto grow textarea
+    function autogrow() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
     }
-  });
+    inputEl.addEventListener('input', autogrow);
+    autogrow();
 
-  async function sendMessage() {
-    const text = (inputEl.value || '').trim();
-    if (!text) return;
+    function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
 
-    addMessage(text, 'user');
-    inputEl.value = '';
+    function addMessage(content, role) {
+      const wrap = document.createElement('div');
+      wrap.className = `message ${role}`;
+      const bubble = document.createElement('div');
+      bubble.className = 'message-content';
+      bubble.innerHTML = role === 'user' ? escapeHtml(content) : content;
+      wrap.appendChild(bubble);
+      chatMessages.appendChild(wrap);
+      scrollToBottom();
+      return bubble;
+    }
 
-    const loadingHTML = `
-      <div class="loading">
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-      </div>`;
-    const assistantBubble = addMessage(loadingHTML, 'assistant');
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
 
-    try {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
-      });
+    // Typing animation fallback
+    function typeOutMarkdown(targetEl, fullText, speed = 12, step = 3) {
+      let i = 0;
+      const timer = setInterval(() => {
+        i += step;
+        targetEl.innerHTML = marked.parse(fullText.slice(0, i));
+        scrollToBottom();
+        if (i >= fullText.length) clearInterval(timer);
+      }, speed);
+    }
 
-      if (!resp.ok || !resp.body) {
-        assistantBubble.textContent = 'Error: could not stream reply.';
-        return;
+    // Enter/Shift+Enter handler
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
       }
+    });
+    sendBtn.addEventListener('click', sendMessage);
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      assistantBubble.innerHTML = '';
+    async function sendMessage() {
+      const text = (inputEl.value || '').trim();
+      if (!text) return;
 
-      let fullText = '';
-      let updates = 0;
+      addMessage(text, 'user');
+      inputEl.value = '';
+      autogrow();
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      const loadingHTML = `
+        <div class="loading">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+        </div>`;
+      const assistantBubble = addMessage(loadingHTML, 'assistant');
 
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk === '[END]') break;
+      try {
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text })
+        });
 
-        fullText += chunk;
-        updates++;
+        if (!resp.ok || !resp.body) {
+          assistantBubble.textContent = 'Error: could not stream reply.';
+          return;
+        }
 
-        // If it truly streams, paint progressively
-        if (updates > 2) {
-          assistantBubble.innerHTML = marked.parse(fullText);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        assistantBubble.innerHTML = '';
+
+        let fullText = '';
+        let updates = 0;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk === '[END]') break;
+
+          fullText += chunk;
+          updates++;
+
+          if (updates > 2) {
+            assistantBubble.innerHTML = marked.parse(fullText);
+            scrollToBottom();
+          }
+        }
+
+        if (updates <= 2) {
+          typeOutMarkdown(assistantBubble, fullText.trim(), 10, 2);
+        } else {
+          assistantBubble.innerHTML = marked.parse(fullText.trim());
           scrollToBottom();
         }
-      }
 
-      // If we didn’t get enough streaming frames, fake the typing
-      if (updates <= 2) {
-        typeOutMarkdown(assistantBubble, fullText.trim(), 10, 2);
-      } else {
-        assistantBubble.innerHTML = marked.parse(fullText.trim());
-        scrollToBottom();
+      } catch (err) {
+        console.error(err);
+        assistantBubble.textContent = 'Network error.';
       }
-
-    } catch (err) {
-      console.error(err);
-      assistantBubble.textContent = 'Network error.';
     }
-  }
-  .chat-input { resize: none; line-height: 1.4; }
-.chat-input:focus { border-color: #004c9d; }
-
-</script>
-
+  </script>
 </body>
 </html>
-
-
-
