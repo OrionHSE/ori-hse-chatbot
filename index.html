@@ -198,85 +198,114 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-  <script>
-    const chatMessages = document.getElementById('chatMessages');
-    function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+<script>
+  const chatMessages = document.getElementById('chatMessages');
+  function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
 
-    function addMessage(content, role) {
-      const wrap = document.createElement('div');
-      wrap.className = `message ${role}`;
-      const bubble = document.createElement('div');
-      bubble.className = 'message-content';
-      bubble.innerHTML = role === 'user' ? escapeHtml(content) : content;
-      wrap.appendChild(bubble);
-      chatMessages.appendChild(wrap);
+  function addMessage(content, role) {
+    const wrap = document.createElement('div');
+    wrap.className = `message ${role}`;
+    const bubble = document.createElement('div');
+    bubble.className = 'message-content';
+    bubble.innerHTML = role === 'user' ? escapeHtml(content) : content;
+    wrap.appendChild(bubble);
+    chatMessages.appendChild(wrap);
+    scrollToBottom();
+    return bubble;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Typewriter fallback: progressively render Markdown
+  function typeOutMarkdown(targetEl, fullText, speed = 12, step = 3) {
+    let i = 0;
+    const timer = setInterval(() => {
+      i += step;
+      targetEl.innerHTML = marked.parse(fullText.slice(0, i));
       scrollToBottom();
-      return bubble;
-    }
+      if (i >= fullText.length) clearInterval(timer);
+    }, speed);
+  }
 
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+  // Shift+Enter = newline, Enter = send
+  const inputEl = document.getElementById('chatInput');
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
+  });
 
-    const inputEl = document.getElementById('chatInput');
-    inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
+  async function sendMessage() {
+    const text = (inputEl.value || '').trim();
+    if (!text) return;
+
+    addMessage(text, 'user');
+    inputEl.value = '';
+
+    const loadingHTML = `
+      <div class="loading">
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+        <div class="loading-dot"></div>
+      </div>`;
+    const assistantBubble = addMessage(loadingHTML, 'assistant');
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+
+      if (!resp.ok || !resp.body) {
+        assistantBubble.textContent = 'Error: could not stream reply.';
+        return;
       }
-    });
 
-    async function sendMessage() {
-      const text = (inputEl.value || '').trim();
-      if (!text) return;
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      assistantBubble.innerHTML = '';
 
-      addMessage(text, 'user');
-      inputEl.value = '';
+      let fullText = '';
+      let updates = 0;
 
-      const loadingHTML = `
-        <div class="loading">
-          <div class="loading-dot"></div>
-          <div class="loading-dot"></div>
-          <div class="loading-dot"></div>
-        </div>`;
-      const assistantBubble = addMessage(loadingHTML, 'assistant');
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      try {
-        const resp = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
-        });
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk === '[END]') break;
 
-        if (!resp.ok || !resp.body) {
-          assistantBubble.textContent = 'Error: could not stream reply.';
-          return;
-        }
+        fullText += chunk;
+        updates++;
 
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        assistantBubble.innerHTML = '';
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          if (chunk === '[END]') break;
-          fullText += chunk;
+        // If it truly streams, paint progressively
+        if (updates > 2) {
           assistantBubble.innerHTML = marked.parse(fullText);
           scrollToBottom();
         }
+      }
 
+      // If we didn’t get enough streaming frames, fake the typing
+      if (updates <= 2) {
+        typeOutMarkdown(assistantBubble, fullText.trim(), 10, 2);
+      } else {
         assistantBubble.innerHTML = marked.parse(fullText.trim());
         scrollToBottom();
-      } catch (err) {
-        console.error(err);
-        assistantBubble.textContent = 'Network error.';
       }
+
+    } catch (err) {
+      console.error(err);
+      assistantBubble.textContent = 'Network error.';
     }
-  </script>
+  }
+</script>
+
 </body>
 </html>
+
