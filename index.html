@@ -300,6 +300,7 @@
         if (updates <= 2) {
           typeOutMarkdown(assistantBubble, fullText.trim(), 10, 2);
         } else {
+          marked.setOptions({ breaks: true, gfm: true });
           assistantBubble.innerHTML = marked.parse(fullText.trim());
           scrollToBottom();
         }
@@ -312,3 +313,4 @@
   </script>
 </body>
 </html>
+
