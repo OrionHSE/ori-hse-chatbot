@@ -132,6 +132,12 @@ Be concise, use short Markdown bullets, and reply in the user's language.
   textOut = (textOut || "").trim();
   if (!textOut) textOut = "Sorry — I couldn't read a response.";
 
+  // Clean odd auto-citation tokens like   or [4†source]
+textOut = textOut
+  .replace(/[\[【]\d+(?::\d+)?\s*†source[】\]]/gi, "")
+  .replace(/\s{2,}/g, " ")
+  .trim();
+
   return new Response(textOut, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
@@ -139,3 +145,4 @@ Be concise, use short Markdown bullets, and reply in the user's language.
     },
   });
 }
+
